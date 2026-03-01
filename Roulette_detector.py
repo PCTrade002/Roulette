@@ -7,6 +7,7 @@
 ║    Ce programme ne prédit rien, il observe des déséquilibres ║
 ╚══════════════════════════════════════════════════════════════╝
 
+
 PRINCIPE MATHÉMATIQUE DE BASE :
 ────────────────────────────────
 Sur 37 tirages (1 cycle complet de roulette européenne 0-36) :
