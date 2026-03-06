@@ -21,16 +21,6 @@ from typing import Optional, List, Dict, Set
 DEBUG = True
 
 # ═══════════════════════════════════════════════════════════════
-#  SECTION 0 : SIGMA CONFIG
-# ═══════════════════════════════════════════════════════════════
-
-SIGMA_BASE     = 1.618
-SIGMA_REF_NUMS = 12
-
-def compute_sigma_cfg(nb_numbers: int) -> float:
-    return SIGMA_BASE * (SIGMA_REF_NUMS / nb_numbers)
-
-# ═══════════════════════════════════════════════════════════════
 #  SECTION 1 : COULEURS ANSI
 # ═══════════════════════════════════════════════════════════════
 
@@ -63,14 +53,43 @@ NEIGHBOR_DIST_MIN = 3
 NEIGHBOR_DIST_MAX = 6
 
 def cylinder_neighbors(n: int, distance: int) -> List[int]:
-    idx      = CYLINDER.index(n)
-    size     = len(CYLINDER)
+    idx       = CYLINDER.index(n)
+    size      = len(CYLINDER)
     neighbors = []
     for delta in range(-distance, distance + 1):
         if delta == 0:
             continue
         neighbors.append(CYLINDER[(idx + delta) % size])
     return neighbors
+
+def display_cylinder_full(last_number: int, neighbor_dist: int) -> str:
+    """
+    Affiche le cylindre complet (37 numéros) sur 2 lignes.
+    [XX] = numéro sorti   <XX> = voisin   XX  = autre
+    """
+    neighbors = set(cylinder_neighbors(last_number, neighbor_dist))
+    size      = len(CYLINDER)
+    line1     = []
+    line2     = []
+
+    for i, num in enumerate(CYLINDER):
+        n_str = f"{num:02d}"
+        if num == last_number:
+            token = colorize(f"[{n_str}]", Color.MAGENTA, Color.BOLD)
+        elif num in neighbors:
+            token = colorize(f"<{n_str}>", Color.YELLOW)
+        else:
+            token = colorize(f" {n_str} ", Color.DIM)
+
+        if i < 19:
+            line1.append(token)
+        else:
+            line2.append(token)
+
+    return (
+        "  " + " ".join(line1) + "\n" +
+        "  " + " ".join(line2)
+    )
 
 # ═══════════════════════════════════════════════════════════════
 #  SECTION 3 : DATACLASSES
@@ -82,7 +101,6 @@ class ZoneConfig:
     numbers   : Set[int]
     category  : str
     wait      : int
-    sigma_cfg : float
     definition: str
 
 @dataclass
@@ -100,13 +118,11 @@ def build_zones() -> Dict[str, ZoneConfig]:
     zones: Dict[str, ZoneConfig] = {}
 
     def add(name, numbers, category, wait, definition):
-        nums = set(numbers)
         zones[name] = ZoneConfig(
             name       = name,
-            numbers    = nums,
+            numbers    = set(numbers),
             category   = category,
             wait       = wait,
-            sigma_cfg  = compute_sigma_cfg(len(nums)),
             definition = definition,
         )
 
@@ -127,283 +143,228 @@ def build_zones() -> Dict[str, ZoneConfig]:
         "3 6 9 12 15 18 21 24 27 30 33 36")
 
     # ── Sixains ───────────────────────────────────────────────
-    add("Sixain 1-6",    {1,2,3,4,5,6},       "Sixain", 18, "1 2 3 4 5 6")
-    add("Sixain 7-12",   {7,8,9,10,11,12},    "Sixain", 18, "7 8 9 10 11 12")
-    add("Sixain 13-18",  {13,14,15,16,17,18}, "Sixain", 18, "13 14 15 16 17 18")
-    add("Sixain 19-24",  {19,20,21,22,23,24}, "Sixain", 18, "19 20 21 22 23 24")
-    add("Sixain 25-30",  {25,26,27,28,29,30}, "Sixain", 18, "25 26 27 28 29 30")
-    add("Sixain 31-36",  {31,32,33,34,35,36}, "Sixain", 18, "31 32 33 34 35 36")
+    add("Sixain 1",  range(1,  7),  "Sixain", 18, "1→6")
+    add("Sixain 2",  range(7,  13), "Sixain", 18, "7→12")
+    add("Sixain 3",  range(13, 19), "Sixain", 18, "13→18")
+    add("Sixain 4",  range(19, 25), "Sixain", 18, "19→24")
+    add("Sixain 5",  range(25, 31), "Sixain", 18, "25→30")
+    add("Sixain 6",  range(31, 37), "Sixain", 18, "31→36")
 
     # ── Carrés ────────────────────────────────────────────────
     squares = [
-        ("Carré 1-5",   {1,2,4,5}),    ("Carré 2-6",   {2,3,5,6}),
-        ("Carré 4-8",   {4,5,7,8}),    ("Carré 5-9",   {5,6,8,9}),
-        ("Carré 7-11",  {7,8,10,11}),  ("Carré 8-12",  {8,9,11,12}),
-        ("Carré 10-14", {10,11,13,14}),("Carré 11-15", {11,12,14,15}),
-        ("Carré 13-17", {13,14,16,17}),("Carré 14-18", {14,15,17,18}),
-        ("Carré 16-20", {16,17,19,20}),("Carré 17-21", {17,18,20,21}),
-        ("Carré 19-23", {19,20,22,23}),("Carré 20-24", {20,21,23,24}),
-        ("Carré 22-26", {22,23,25,26}),("Carré 23-27", {23,24,26,27}),
-        ("Carré 25-29", {25,26,28,29}),("Carré 26-30", {26,27,29,30}),
-        ("Carré 28-32", {28,29,31,32}),("Carré 29-33", {29,30,32,33}),
-        ("Carré 31-35", {31,32,34,35}),("Carré 32-36", {32,33,35,36}),
+        ({1,2,4,5},    "1 2 4 5"),
+        ({2,3,5,6},    "2 3 5 6"),
+        ({4,5,7,8},    "4 5 7 8"),
+        ({5,6,8,9},    "5 6 8 9"),
+        ({7,8,10,11},  "7 8 10 11"),
+        ({8,9,11,12},  "8 9 11 12"),
+        ({10,11,13,14},"10 11 13 14"),
+        ({11,12,14,15},"11 12 14 15"),
+        ({13,14,16,17},"13 14 16 17"),
+        ({14,15,17,18},"14 15 17 18"),
+        ({16,17,19,20},"16 17 19 20"),
+        ({17,18,20,21},"17 18 20 21"),
+        ({19,20,22,23},"19 20 22 23"),
+        ({20,21,23,24},"20 21 23 24"),
+        ({22,23,25,26},"22 23 25 26"),
+        ({23,24,26,27},"23 24 26 27"),
+        ({25,26,28,29},"25 26 28 29"),
+        ({26,27,29,30},"26 27 29 30"),
+        ({28,29,31,32},"28 29 31 32"),
+        ({29,30,32,33},"29 30 32 33"),
+        ({31,32,34,35},"31 32 34 35"),
+        ({32,33,35,36},"32 33 35 36"),
     ]
-    for name, nums in squares:
-        s = sorted(nums)
-        add(name, nums, "Carré", 25, " ".join(str(x) for x in s))
+    for nums, defi in squares:
+        name = "Carré " + defi
+        add(name, nums, "Carré", 25, defi)
 
     return zones
 
 # ═══════════════════════════════════════════════════════════════
-#  SECTION 5 : TRACKER
+#  SECTION 5 : SIGNAL — seuils fixes par catégorie
+# ═══════════════════════════════════════════════════════════════
+
+def compute_signal(cfg: ZoneConfig, state: ZoneState, total: int) -> str:
+    """
+    Douzaine/Colonne : GO si hits ≤ 10 ET absent ≥ 12
+    Sixain           : GO si hits ≤ 3  ET absent ≥ 18
+    Carré            : GO si hits ≤ 0  ET absent ≥ 25
+    """
+    if total == 0:
+        return "STOP"
+
+    cat      = cfg.category
+    hits     = state.hits
+    absent   = state.last_seen
+
+    if cat in ("Douzaine", "Colonne"):
+        if hits <= 10 and absent >= 12:
+            return "GO"
+        elif hits <= 14 and absent >= 8:
+            return "ATTENTE"
+        else:
+            return "STOP"
+
+    elif cat == "Sixain":
+        if hits <= 3 and absent >= 18:
+            return "GO"
+        elif hits <= 5 and absent >= 12:
+            return "ATTENTE"
+        else:
+            return "STOP"
+
+    elif cat == "Carré":
+        if hits <= 0 and absent >= 25:
+            return "GO"
+        elif hits <= 1 and absent >= 18:
+            return "ATTENTE"
+        else:
+            return "STOP"
+
+    return "STOP"
+
+# ═══════════════════════════════════════════════════════════════
+#  SECTION 6 : TRACKER
 # ═══════════════════════════════════════════════════════════════
 
 class RouletteTracker:
-
-    WINDOW = 37
-
     def __init__(self):
-        self.history          : List[int]             = []
-        self.zones            : Dict[str, ZoneConfig] = build_zones()
-        self.states           : Dict[str, ZoneState]  = {
-            name: ZoneState() for name in self.zones
+        self.zones   : Dict[str, ZoneConfig] = build_zones()
+        self.states  : Dict[str, ZoneState]  = {
+            n: ZoneState() for n in self.zones
         }
-        self.neighbor_dist    : int      = NEIGHBOR_DIST_MIN
-        self.neighbor_last    : int      = 999
-        self.neighbor_numbers : Set[int] = set()
+        self.history : List[int]             = []
+        self.freq    : Dict[int, int]        = {i: 0 for i in range(37)}
+        self.neighbor_dist : int             = NEIGHBOR_DIST_MIN
 
-    # ── Sigma théorique ───────────────────────────────────────
-    @staticmethod
-    def compute_sigma_theo(nb_numbers: int, n: int = 37) -> float:
-        p = nb_numbers / 37
-        return math.sqrt(n * p * (1 - p))
+    # ── ajout d'un numéro ─────────────────────────────────────
+    def add_number(self, n: int):
+        self.history.append(n)
+        self.freq[n] += 1
+        total = len(self.history)
 
-    # ── Mise à jour zone ──────────────────────────────────────
-    def _update_zone(self, name: str, number: int):
-        cfg   = self.zones[name]
-        state = self.states[name]
-
-        window     = self.history[-self.WINDOW:]
-        state.hits = sum(1 for x in window if x in cfg.numbers)
-
-        state.last_seen = 999
-        for i, x in enumerate(reversed(self.history)):
-            if x in cfg.numbers:
-                state.last_seen = i
-                break
-
-        sigma_theo    = self.compute_sigma_theo(len(cfg.numbers))
-        hits_attendus = len(cfg.numbers)
-        sigma_mesure  = (
-            (hits_attendus - state.hits) / sigma_theo
-            if sigma_theo > 0 else 0.0
-        )
-
-        if sigma_mesure >= cfg.sigma_cfg:
-            state.signal = "GO"
-        elif sigma_mesure >= cfg.sigma_cfg * 0.5:
-            state.signal = "ATTENTE"
-        else:
-            state.signal = "STOP"
-
-        state.history.append(state.signal)
-
-    # ── Mise à jour voisins ───────────────────────────────────
-    def _update_neighbors(self, number: int):
-        if number in self.neighbor_numbers:
+        # voisins cylindre
+        neighbors = set(cylinder_neighbors(n, self.neighbor_dist))
+        if neighbors & {self.history[-2]} if len(self.history) >= 2 else False:
             self.neighbor_dist = NEIGHBOR_DIST_MIN
-            self.neighbor_last = 0
         else:
-            if self.neighbor_last < 999:
-                self.neighbor_last += 1
-            if self.neighbor_last > NEIGHBOR_DIST_MAX:
-                self.neighbor_dist = min(
-                    self.neighbor_dist + 1, NEIGHBOR_DIST_MAX
-                )
-        self.neighbor_numbers = set(
-            cylinder_neighbors(number, self.neighbor_dist)
-        )
+            self.neighbor_dist = min(self.neighbor_dist + 1, NEIGHBOR_DIST_MAX)
 
-    # ── Ajout numéro ──────────────────────────────────────────
-    def add_number(self, number: int):
-        self.history.append(number)
-        self._update_neighbors(number)
-        for name in self.zones:
-            self._update_zone(name, number)
-        self._print_result(number)
-        if DEBUG:
-            self._print_debug_stats()
+        # mise à jour zones
+        for name, cfg in self.zones.items():
+            st = self.states[name]
+            if n in cfg.numbers:
+                st.hits     += 1
+                st.last_seen = 0
+            else:
+                st.last_seen += 1
+            st.signal = compute_signal(cfg, st, total)
 
-    # ── Préfill ───────────────────────────────────────────────
-    def prefill(self, n: int = 37):
-        print(colorize(
-            f"\n  Préfill de {n} tirages aléatoires...\n", Color.DIM
-        ))
-        for _ in range(n):
+        os.system('cls' if os.name == 'nt' else 'clear')
+        self._display(n, total)
+
+    # ── prefill ───────────────────────────────────────────────
+    def prefill(self, count: int):
+        for _ in range(count):
             self.add_number(random.randint(0, 36))
 
-    # ── Stats globales ────────────────────────────────────────
+    # ── stats ─────────────────────────────────────────────────
     def get_stats(self) -> Optional[Dict]:
         if not self.history:
             return None
-        freq = {}
-        for n in self.history:
-            freq[n] = freq.get(n, 0) + 1
+        chaud = max(self.freq, key=self.freq.get)
+        froid = min(self.freq, key=self.freq.get)
         return {
             "total_tirages": len(self.history),
-            "numero_chaud" : max(freq, key=freq.get),
-            "numero_froid" : min(freq, key=freq.get),
+            "numero_chaud" : chaud,
+            "numero_froid" : froid,
         }
 
-    # ── Affichage résultat principal ──────────────────────────
-    def _print_result(self, number: int):
-        os.system('cls' if os.name == 'nt' else 'clear')
-
-        sep = "─" * 60
-
-        # ── Header ────────────────────────────────────────────
+    # ── affichage principal ───────────────────────────────────
+    def _display(self, last: int, total: int):
         print(colorize(
-            f"\n  ▶  Numéro sorti : {number}   (tour {len(self.history)})\n",
-            Color.BOLD, Color.MAGENTA
+            "\n  ULTRA ROULETTE PRO — 3 Signaux\n",
+            Color.BOLD, Color.CYAN
         ))
 
-        # ── Historique ────────────────────────────────────────
-        hist_str = "  ".join(
-            colorize(str(x), Color.BOLD, Color.CYAN)
-            for x in self.history[-15:]
-        )
-        print(f"  Historique : {hist_str}\n")
-        print(colorize(f"  {sep}", Color.DIM))
-
-        # ── Cylindre ──────────────────────────────────────────
-        idx      = CYLINDER.index(number)
-        size     = len(CYLINDER)
-        dist     = self.neighbor_dist
-
-        # Ligne cylindre centrée sur le numéro sorti
-        cyl_display = []
-        for delta in range(-dist, dist + 1):
-            num = CYLINDER[(idx + delta) % size]
-            if delta == 0:
-                cyl_display.append(
-                    colorize(f"[{num}]", Color.BOLD, Color.MAGENTA)
-                )
-            else:
-                cyl_display.append(
-                    colorize(str(num), Color.YELLOW)
-                )
-
+        # ── Dernier numéro ────────────────────────────────────
+        color_num = Color.GREEN if last != 0 else Color.CYAN
         print(colorize(
-            f"\n  🎡  Cylindre ±{dist} voisins :\n",
-            Color.BOLD
-        ))
-        print("  " + "  ".join(cyl_display) + "\n")
-        print(colorize(f"  {sep}", Color.DIM))
-
-        # ── Zones GO ──────────────────────────────────────────
-        go_zones = [
-            (name, self.states[name], self.zones[name])
-            for name in self.zones
-            if self.states[name].signal == "GO"
-        ]
-
-        print(colorize(
-            f"\n  ✅  ZONES GO ({len(go_zones)}) :\n",
-            Color.BOLD, Color.GREEN
+            f"  Dernier : {last:02d}   |   Total tirages : {total}   "
+            f"|   Dist voisins : ±{self.neighbor_dist}",
+            Color.BOLD, color_num
         ))
 
-        if go_zones:
-            print(colorize(
-                f"  {'ZONE':<22} {'DÉFINITION':<38} {'hits/37':>8}  {'last/wait':>10}",
-                Color.BOLD
-            ))
-            print(f"  {'─' * 80}")
-            for name, st, cfg in go_zones:
-                ls = st.last_seen if st.last_seen < 999 else "—"
-                print(
-                    colorize(f"  {name:<22}", Color.GREEN, Color.BOLD) +
-                    colorize(f" {cfg.definition:<38}", Color.GREEN) +
-                    colorize(f" {st.hits:>3}/37", Color.GREEN) +
-                    colorize(f"  {str(ls):>3}/{cfg.wait:<3}", Color.DIM)
-                )
-        else:
-            print(colorize("  Aucune zone GO ce tour.\n", Color.DIM))
-
+        # ── Cylindre complet ──────────────────────────────────
+        print()
+        print(colorize("  ── CYLINDRE ──", Color.BOLD, Color.CYAN))
+        print(display_cylinder_full(last, self.neighbor_dist))
         print()
 
-    # ── Affichage DEBUG ───────────────────────────────────────
-    def _print_debug_stats(self):
-        sep     = "─" * 88
-        sep_cat = "╌" * 88
+        # ── Historique (15 derniers) ──────────────────────────
+        recent = self.history[-15:]
+        hist_str = "  ".join(
+            colorize(f"{x:02d}", Color.MAGENTA if x == last else Color.DIM)
+            for x in recent
+        )
+        print(f"  Historique : {hist_str}\n")
 
-        print(colorize(
-            f"\n  🐛  DEBUG — toutes zones (tour {len(self.history)})\n",
-            Color.BOLD, Color.YELLOW
-        ))
-        print(colorize(
-            f"  {'ZONE':<22} {'DÉFINITION':<38} {'hits/37':>8}"
-            f"  {'σ mes':>7}  {'last/wait':>10}  SIGNAL",
-            Color.BOLD
-        ))
-        print(f"  {sep}")
+        # ── Tableau des zones ─────────────────────────────────
+        categories = ["Douzaine", "Colonne", "Sixain", "Carré"]
 
-        current_cat = None
+        for cat in categories:
+            print(colorize(
+                f"\n  ═══ {cat.upper()} ═══",
+                Color.BOLD, Color.CYAN
+            ))
 
-        for name, cfg in self.zones.items():
-            state = self.states[name]
+            sep = "─" * 110
+            print(colorize(
+                f"  {'Zone':<22} {'Définition':<38} "
+                f"{'Hits':>6}  {'Absent':>8}  {'Signal'}",
+                Color.BOLD
+            ))
+            print(f"  {sep}")
 
-            # ── Séparateur entre catégories ───────────────────
-            if cfg.category != current_cat:
-                if current_cat is not None:
-                    print(colorize(f"  {sep_cat}", Color.DIM))
-                current_cat = cfg.category
+            for name, cfg in self.zones.items():
+                if cfg.category != cat:
+                    continue
+                st = self.states[name]
 
-            # ── Calculs ───────────────────────────────────────
-            sigma_theo    = self.compute_sigma_theo(len(cfg.numbers))
-            hits_attendus = len(cfg.numbers)
-            sigma_mesure  = (
-                (hits_attendus - state.hits) / sigma_theo
-                if sigma_theo > 0 else 0.0
-            )
+                hits_str = colorize(f"{st.hits:>4}", Color.CYAN)
 
-            if sigma_mesure >= cfg.sigma_cfg:
-                hit_color = Color.GREEN
-            elif sigma_mesure >= cfg.sigma_cfg * 0.5:
-                hit_color = Color.YELLOW
-            else:
-                hit_color = Color.RED
+                absent_val = st.last_seen
+                if absent_val >= cfg.wait:
+                    absent_color = Color.RED
+                elif absent_val >= cfg.wait // 2:
+                    absent_color = Color.YELLOW
+                else:
+                    absent_color = Color.DIM
+                absent_str = colorize(
+                    f"absent:{absent_val:>3}", absent_color
+                )
 
-            # ── Signal ────────────────────────────────────────
-            sig = state.signal
-            if sig == "GO":
-                sig_color, sig_label = Color.GREEN,  "✅ GO"
-            elif sig == "ATTENTE":
-                sig_color, sig_label = Color.YELLOW, "⏳ ATTENTE"
-            else:
-                sig_color, sig_label = Color.RED,    "🔴 STOP"
+                if st.signal == "GO":
+                    sig_label = "✅ GO     "
+                    sig_color = Color.GREEN
+                elif st.signal == "ATTENTE":
+                    sig_label = "⏳ ATTENTE"
+                    sig_color = Color.YELLOW
+                else:
+                    sig_label = "🔴 STOP   "
+                    sig_color = Color.RED
+                sig_str = colorize(sig_label, sig_color, Color.BOLD)
 
-            ls           = state.last_seen if state.last_seen < 999 else "—"
-            hits_str     = colorize(f"{state.hits:>3}/37",         hit_color)
-            smes_str     = colorize(f"{sigma_mesure:>+7.2f}",      hit_color)
-            lastwait_str = colorize(f"{str(ls):>3}/{cfg.wait:<3}", Color.DIM)
-            sig_str      = colorize(sig_label, sig_color, Color.BOLD)
+                print(
+                    f"  {name:<22} {cfg.definition:<38} "
+                    f"{hits_str}  {absent_str}  {sig_str}"
+                )
 
-            print(
-                f"  {name:<22} {cfg.definition:<38} "
-                f"{hits_str:>14}  {smes_str}  "
-                f"{lastwait_str:>16}  {sig_str}"
-            )
-
-        print(f"  {sep}")
-        print(colorize(
-            f"  σ mes = (hits_attendus - hits_obs) / σ théo  |  "
-            f"GO si σ mes ≥ {SIGMA_BASE} × 12/nb_nums  |  "
-            f"last/wait = tours depuis dernier hit / seuil",
-            Color.DIM
-        ))
+            print(f"  {sep}")
 
 # ═══════════════════════════════════════════════════════════════
-#  SECTION 6 : AIDE
+#  SECTION 7 : AIDE
 # ═══════════════════════════════════════════════════════════════
 
 def print_help():
@@ -416,19 +377,19 @@ def print_help():
   │  h     → afficher cette aide                              │
   │  q     → quitter                                          │
   ├────────────────────────────────────────────────────────────┤
-  │  SIGNAUX                                                   │
-  │  ✅ GO      σ mesuré ≥ σ cfg  → zone en retard marqué    │
-  │  ⏳ ATTENTE σ mesuré ≥ σ/2   → zone légèrement en retard │
-  │  🔴 STOP    σ mesuré < σ/2   → zone dans la norme        │
+  │  SIGNAUX (seuils fixes par catégorie)                      │
+  │  Douzaine/Colonne : GO si hits ≤ 10 ET absent ≥ 12       │
+  │  Sixain           : GO si hits ≤ 3  ET absent ≥ 18       │
+  │  Carré            : GO si hits ≤ 0  ET absent ≥ 25       │
   ├────────────────────────────────────────────────────────────┤
   │  CYLINDRE                                                  │
-  │  Démarre à ±3, monte jusqu'à ±6 sans hit voisin           │
-  │  Reset à ±3 dès qu'un voisin sort                         │
+  │  [XX] = dernier sorti   <XX> = voisin   XX = autre        │
+  │  Distance voisins : ±3 → ±6 (reset si voisin sort)       │
   └────────────────────────────────────────────────────────────┘
 """, Color.DIM))
 
 # ═══════════════════════════════════════════════════════════════
-#  SECTION 7 : BOUCLE PRINCIPALE
+#  SECTION 8 : BOUCLE PRINCIPALE
 # ═══════════════════════════════════════════════════════════════
 
 def main():
