@@ -63,10 +63,6 @@ def cylinder_neighbors(n: int, distance: int) -> List[int]:
     return neighbors
 
 def display_cylinder_full(last_number: int, neighbor_dist: int) -> str:
-    """
-    Affiche le cylindre complet (37 numéros) sur 2 lignes.
-    [XX] = numéro sorti   <XX> = voisin   XX  = autre
-    """
     neighbors = set(cylinder_neighbors(last_number, neighbor_dist))
     size      = len(CYLINDER)
     line1     = []
@@ -182,45 +178,41 @@ def build_zones() -> Dict[str, ZoneConfig]:
     return zones
 
 # ═══════════════════════════════════════════════════════════════
-#  SECTION 5 : SIGNAL — seuils fixes par catégorie
+#  SECTION 5 : SIGNAL — seuils fixes + marge d'approche
 # ═══════════════════════════════════════════════════════════════
+
+# Marge d'approche : si on est à MARGE unités des seuils GO → ATTENTE
+MARGE = 2
+
+# Seuils GO par catégorie : (hits_max, absent_min)
+SEUILS = {
+    "Douzaine": (10, 12),
+    "Colonne":  (10, 12),
+    "Sixain":   (3,  18),
+    "Carré":    (0,  25),
+}
 
 def compute_signal(cfg: ZoneConfig, state: ZoneState, total: int) -> str:
     """
-    Douzaine/Colonne : GO si hits ≤ 10 ET absent ≥ 12
-    Sixain           : GO si hits ≤ 3  ET absent ≥ 18
-    Carré            : GO si hits ≤ 0  ET absent ≥ 25
+    GO      : hits ≤ h_go        ET absent ≥ a_go
+    ATTENTE : hits ≤ h_go + MARGE ET absent ≥ a_go - MARGE  (approche)
+    STOP    : sinon
     """
     if total == 0:
         return "STOP"
 
-    cat      = cfg.category
-    hits     = state.hits
-    absent   = state.last_seen
+    if cfg.category not in SEUILS:
+        return "STOP"
 
-    if cat in ("Douzaine", "Colonne"):
-        if hits <= 10 and absent >= 12:
-            return "GO"
-        elif hits <= 14 and absent >= 8:
-            return "ATTENTE"
-        else:
-            return "STOP"
+    h_go, a_go = SEUILS[cfg.category]
+    hits        = state.hits
+    absent      = state.last_seen
 
-    elif cat == "Sixain":
-        if hits <= 3 and absent >= 18:
-            return "GO"
-        elif hits <= 5 and absent >= 12:
-            return "ATTENTE"
-        else:
-            return "STOP"
+    if hits <= h_go and absent >= a_go:
+        return "GO"
 
-    elif cat == "Carré":
-        if hits <= 0 and absent >= 25:
-            return "GO"
-        elif hits <= 1 and absent >= 18:
-            return "ATTENTE"
-        else:
-            return "STOP"
+    if hits <= h_go + MARGE and absent >= a_go - MARGE:
+        return "ATTENTE"
 
     return "STOP"
 
@@ -302,14 +294,6 @@ class RouletteTracker:
         print(display_cylinder_full(last, self.neighbor_dist))
         print()
 
-        # ── Historique (15 derniers) ──────────────────────────
-        recent = self.history[-15:]
-        hist_str = "  ".join(
-            colorize(f"{x:02d}", Color.MAGENTA if x == last else Color.DIM)
-            for x in recent
-        )
-        print(f"  Historique : {hist_str}\n")
-
         # ── Tableau des zones ─────────────────────────────────
         categories = ["Douzaine", "Colonne", "Sixain", "Carré"]
 
@@ -368,7 +352,7 @@ class RouletteTracker:
 # ═══════════════════════════════════════════════════════════════
 
 def print_help():
-    print(colorize("""
+    print(colorize(f"""
   ┌────────────────────────────────────────────────────────────┐
   │  COMMANDES                                                 │
   │  0-36  → entrer un numéro sorti                           │
@@ -377,10 +361,11 @@ def print_help():
   │  h     → afficher cette aide                              │
   │  q     → quitter                                          │
   ├────────────────────────────────────────────────────────────┤
-  │  SIGNAUX (seuils fixes par catégorie)                      │
+  │  SIGNAUX (marge d'approche : ±{MARGE})                         │
   │  Douzaine/Colonne : GO si hits ≤ 10 ET absent ≥ 12       │
-  │  Sixain           : GO si hits ≤ 3  ET absent ≥ 18       │
-  │  Carré            : GO si hits ≤ 0  ET absent ≥ 25       │
+  │  Sixain           : GO si hits ≤  3 ET absent ≥ 18       │
+  │  Carré            : GO si hits ≤  0 ET absent ≥ 25       │
+  │  ATTENTE : dans la marge de {MARGE} unités des seuils GO       │
   ├────────────────────────────────────────────────────────────┤
   │  CYLINDRE                                                  │
   │  [XX] = dernier sorti   <XX> = voisin   XX = autre        │
