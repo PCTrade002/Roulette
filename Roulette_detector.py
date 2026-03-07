@@ -42,7 +42,6 @@ def colorize(*args) -> str:
 # ═══════════════════════════════════════════════════════════════
 #  SECTION 2 : CYLINDRE EUROPÉEN
 # ═══════════════════════════════════════════════════════════════
-
 CYLINDER = [
     5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35,  # TOP  index 0→15
     3, 26, 0,                                                       # RIGHT index 16,17,18
@@ -55,6 +54,7 @@ RIGHT = CYLINDER[16:19]  # 3,26,0
 BOT   = CYLINDER[19:34]  # 32→30  (déjà dans le bon sens gauche→droite)
 LEFT  = CYLINDER[34:37]  # 8,23,10
 
+WAIT_increment = 3
 NEIGHBOR_DIST_MIN = 3
 NEIGHBOR_DIST_MAX = 6
 
@@ -75,26 +75,30 @@ def display_cylinder_full(
     wait_numbers : Set[int]
 ) -> str:
     neighbors = set(cylinder_neighbors(last_number, neighbor_dist))
-    line1, line2 = [], []
 
-    for i, num in enumerate(CYLINDER):
+    def fmt(num):
         n_str = f"{num:02d}"
-
         if num == last_number:
-            token = colorize(f"[{n_str}]", Color.MAGENTA, Color.BOLD)
+            return colorize(f"[{n_str}]", Color.MAGENTA, Color.BOLD)
         elif num in neighbors:
-            token = colorize(f"<{n_str}>", Color.YELLOW, Color.BOLD)
+            return colorize(f"<{n_str}>", Color.YELLOW, Color.BOLD)
         else:
-            token = colorize(f" {n_str} ", Color.DIM)
+            return colorize(f" {n_str} ", Color.DIM)
 
-        if i < 19:
-            line1.append(token)
-        else:
-            line2.append(token)
+    top_line = " ".join(fmt(n) for n in TOP)
+    bot_line = " ".join(fmt(n) for n in reversed(BOT))
+
+    # LEFT[0] est en haut, LEFT[2] en bas → on les aligne avec RIGHT
+    sides = []
+    for i in range(3):
+        l = fmt(LEFT[2 - i])   # inversé : 10, 23, 8
+        r = fmt(RIGHT[i])      # 3, 26, 0
+        sides.append(f"{l}{' ' * 120}{r}")
 
     return (
-        "  " + " ".join(line1) + "\n" +
-        "  " + " ".join(line2)
+        "  " + top_line + "\n" +
+        "\n".join(sides) + "\n" +
+        "  " + bot_line
     )
 
 # ═══════════════════════════════════════════════════════════════
@@ -187,7 +191,7 @@ def build_zones() -> Dict[str, ZoneConfig]:
 #  SECTION 5 : SIGNAL
 # ═══════════════════════════════════════════════════════════════
 
-MARGE = 2
+MARGE = 4
 
 SEUILS = {
     "Douzaine": (10, 12),
@@ -233,17 +237,20 @@ class RouletteTracker:
 
         # voisins cylindre — reset distance si voisin sort
         if len(self.history) >= 2:
-            prev      = self.history[-2]
+            prev = self.history[-2]
             neighbors = set(cylinder_neighbors(prev, self.neighbor_dist))
-            neighbors.add(prev)   # ← le numéro lui-même compte
+            neighbors.add(prev)
             if n in neighbors:
-                self.neighbor_dist        = NEIGHBOR_DIST_MIN
-                self.cylinder_loss_streak = 0        # ✅ dans les voisins → reset
+                self.cylinder_loss_streak = 0
+                # on ne reset la distance qu'après 3 coups hors voisins
+                # donc ici on maintient NEIGHBOR_DIST_MIN
+                self.neighbor_dist = NEIGHBOR_DIST_MIN
             else:
-                self.neighbor_dist        = min(
-                    self.neighbor_dist + 1, NEIGHBOR_DIST_MAX
-                )
-                self.cylinder_loss_streak += 1       # ❌ hors voisins → +1
+                self.cylinder_loss_streak += 1
+                if self.cylinder_loss_streak >= WAIT_increment:  # ←XX coups dehors
+                    self.neighbor_dist = min(
+                        self.neighbor_dist + 1, NEIGHBOR_DIST_MAX
+                    )
 
 
         # mise à jour zones
