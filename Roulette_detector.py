@@ -12,7 +12,8 @@ import os
 import math
 import random
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Set
+from typing import Optional, List, Dict, Set, Tuple
+from collections import deque
 
 # ═══════════════════════════════════════════════════════════════
 #  FLAG DEBUG
@@ -43,18 +44,18 @@ def colorize(*args) -> str:
 #  SECTION 2 : CYLINDRE EUROPÉEN
 # ═══════════════════════════════════════════════════════════════
 CYLINDER = [
-    5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35,  # TOP  index 0→15
-    3, 26, 0,                                                       # RIGHT index 16,17,18
-    32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30,      # BOT  index 19→33
-    8, 23, 10                                                        # LEFT index 34,35,36
+    5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35,
+    3, 26, 0,
+    32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30,
+    8, 23, 10
 ]
 
-TOP   = CYLINDER[0:16]   # 5→35
-RIGHT = CYLINDER[16:19]  # 3,26,0
-BOT   = CYLINDER[19:34]  # 32→30  (déjà dans le bon sens gauche→droite)
-LEFT  = CYLINDER[34:37]  # 8,23,10
+TOP   = CYLINDER[0:16]
+RIGHT = CYLINDER[16:19]
+BOT   = CYLINDER[19:34]
+LEFT  = CYLINDER[34:37]
 
-WAIT_increment = 3
+WAIT_increment = 5
 NEIGHBOR_DIST_MIN = 3
 NEIGHBOR_DIST_MAX = 6
 
@@ -88,12 +89,12 @@ def display_cylinder_full(
     top_line = " ".join(fmt(n) for n in TOP)
     bot_line = " ".join(fmt(n) for n in reversed(BOT))
 
-    # LEFT[0] est en haut, LEFT[2] en bas → on les aligne avec RIGHT
     sides = []
+    max_space = 120
     for i in range(3):
-        l = fmt(LEFT[2 - i])   # inversé : 10, 23, 8
-        r = fmt(RIGHT[i])      # 3, 26, 0
-        sides.append(f"{l}{' ' * 120}{r}")
+        l = fmt(LEFT[2 - i])
+        r = fmt(RIGHT[i])
+        sides.append(f"{l}{' ' * max_space}{r}")
 
     return (
         "  " + top_line + "\n" +
@@ -115,13 +116,46 @@ class ZoneConfig:
 
 @dataclass
 class ZoneState:
-    hits      : int       = 0
-    last_seen : int       = 999
-    signal    : str       = "STOP"
-    history   : List[str] = field(default_factory=list)
+    hits: int = 0                          # occurrences dans la fenêtre
+    last_seen: int = 9999                  # tirages depuis dernière apparition (global)
+    signal: str = "STOP"
+    absent: int = 0
 
 # ═══════════════════════════════════════════════════════════════
-#  SECTION 4 : ZONES
+#  SECTION 5 : SIGNAL
+# ═══════════════════════════════════════════════════════════════
+
+MARGE = 4
+
+# SEUILS : pour chaque catégorie on définit (h_go, a_go)
+#  - h_go : nombre maximal d'occurrences (hits) dans la fenêtre glissante
+#           (ici window_size, par défaut 37) pour que la zone puisse
+#           potentiellement devenir GO.
+#  - a_go : nombre minimum de tirages d'absence (last_seen) depuis la
+#           dernière apparition dans l'historique GLOBAL pour déclencher GO.
+#
+SEUILS = {
+    "Douzaine": (8, 10),
+    "Colonne":  (8, 10),
+    "Sixain":   (2,  20),
+}
+
+def compute_signal(cfg: ZoneConfig, state: ZoneState, total_window: int) -> str:
+    # total_window sert juste à détecter fenêtre vide au départ
+    if total_window == 0 or cfg.category not in SEUILS:
+        return "STOP"
+    h_go, a_go = SEUILS[cfg.category]
+    hits   = state.hits
+    absent = state.last_seen
+
+    if hits <= h_go and absent >= a_go:
+        return "GO"
+    if hits <= h_go + MARGE and absent >= a_go - MARGE:
+        return "ATTENTE"
+    return "STOP"
+
+# ═══════════════════════════════════════════════════════════════
+#  SECTION 4 : ZONES (build_zones)
 # ═══════════════════════════════════════════════════════════════
 
 def build_zones() -> Dict[str, ZoneConfig]:
@@ -136,135 +170,101 @@ def build_zones() -> Dict[str, ZoneConfig]:
             definition = definition,
         )
 
-    add("Douzaine 1", range(1,  13), "Douzaine", 10, "1→12")
-    add("Douzaine 2", range(13, 25), "Douzaine", 10, "13→24")
-    add("Douzaine 3", range(25, 37), "Douzaine", 10, "25→36")
+    # Douzaines
+    add("Douzaine 1", range(1, 13), "Douzaine", SEUILS["Douzaine"][1], "1→12")
+    add("Douzaine 2", range(13, 25), "Douzaine", SEUILS["Douzaine"][1], "13→24")
+    add("Douzaine 3", range(25, 37), "Douzaine", SEUILS["Douzaine"][1], "25→36")
 
-    add("Colonne 1",
-        {1,4,7,10,13,16,19,22,25,28,31,34}, "Colonne", 10,
+    # Colonnes
+    add("Colonne 1", {1,4,7,10,13,16,19,22,25,28,31,34}, "Colonne", SEUILS["Colonne"][1],
         "1 4 7 10 13 16 19 22 25 28 31 34")
-    add("Colonne 2",
-        {2,5,8,11,14,17,20,23,26,29,32,35}, "Colonne", 10,
+    add("Colonne 2", {2,5,8,11,14,17,20,23,26,29,32,35}, "Colonne", SEUILS["Colonne"][1],
         "2 5 8 11 14 17 20 23 26 29 32 35")
-    add("Colonne 3",
-        {3,6,9,12,15,18,21,24,27,30,33,36}, "Colonne", 10,
+    add("Colonne 3", {3,6,9,12,15,18,21,24,27,30,33,36}, "Colonne", SEUILS["Colonne"][1],
         "3 6 9 12 15 18 21 24 27 30 33 36")
 
-    add("Sixain 1",  range(1,  7),  "Sixain", 18, "1→6")
-    add("Sixain 2",  range(7,  13), "Sixain", 18, "7→12")
-    add("Sixain 3",  range(13, 19), "Sixain", 18, "13→18")
-    add("Sixain 4",  range(19, 25), "Sixain", 18, "19→24")
-    add("Sixain 5",  range(25, 31), "Sixain", 18, "25→30")
-    add("Sixain 6",  range(31, 37), "Sixain", 18, "31→36")
-
-    # squares = [
-    #     ({1,2,4,5},    "1 2 4 5"),
-    #     ({2,3,5,6},    "2 3 5 6"),
-    #     ({4,5,7,8},    "4 5 7 8"),
-    #     ({5,6,8,9},    "5 6 8 9"),
-    #     ({7,8,10,11},  "7 8 10 11"),
-    #     ({8,9,11,12},  "8 9 11 12"),
-    #     ({10,11,13,14},"10 11 13 14"),
-    #     ({11,12,14,15},"11 12 14 15"),
-    #     ({13,14,16,17},"13 14 16 17"),
-    #     ({14,15,17,18},"14 15 17 18"),
-    #     ({16,17,19,20},"16 17 19 20"),
-    #     ({17,18,20,21},"17 18 20 21"),
-    #     ({19,20,22,23},"19 20 22 23"),
-    #     ({20,21,23,24},"20 21 23 24"),
-    #     ({22,23,25,26},"22 23 25 26"),
-    #     ({23,24,26,27},"23 24 26 27"),
-    #     ({25,26,28,29},"25 26 28 29"),
-    #     ({26,27,29,30},"26 27 29 30"),
-    #     ({28,29,31,32},"28 29 31 32"),
-    #     ({29,30,32,33},"29 30 32 33"),
-    #     ({31,32,34,35},"31 32 34 35"),
-    #     ({32,33,35,36},"32 33 35 36"),
-    # ]
-    # for nums, defi in squares:
-    #     name = "Carré " + defi
-    #     add(name, nums, "Carré", 25, defi)
+    # Sixains
+    add("Sixain 1", range(1, 7), "Sixain", SEUILS["Sixain"][1], "1→6")
+    add("Sixain 2", range(7, 13), "Sixain", SEUILS["Sixain"][1], "7→12")
+    add("Sixain 3", range(13, 19), "Sixain", SEUILS["Sixain"][1], "13→18")
+    add("Sixain 4", range(19, 25), "Sixain", SEUILS["Sixain"][1], "19→24")
+    add("Sixain 5", range(25, 31), "Sixain", SEUILS["Sixain"][1], "25→30")
+    add("Sixain 6", range(31, 37), "Sixain", SEUILS["Sixain"][1], "31→36")
 
     return zones
-
-# ═══════════════════════════════════════════════════════════════
-#  SECTION 5 : SIGNAL
-# ═══════════════════════════════════════════════════════════════
-
-MARGE = 4
-
-SEUILS = {
-    "Douzaine": (10, 12),
-    "Colonne":  (10, 12),
-    "Sixain":   (3,  18),
-    "Carré":    (0,  25),
-}
-
-def compute_signal(cfg: ZoneConfig, state: ZoneState, total: int) -> str:
-    if total == 0 or cfg.category not in SEUILS:
-        return "STOP"
-    h_go, a_go = SEUILS[cfg.category]
-    hits   = state.hits
-    absent = state.last_seen
-
-    if hits <= h_go and absent >= a_go:
-        return "GO"
-    if hits <= h_go + MARGE and absent >= a_go - MARGE:
-        return "ATTENTE"
-    return "STOP"
 
 # ═══════════════════════════════════════════════════════════════
 #  SECTION 6 : TRACKER
 # ═══════════════════════════════════════════════════════════════
 
 class RouletteTracker:
-    def __init__(self):
-        self.zones               : Dict[str, ZoneConfig] = build_zones()
-        self.states              : Dict[str, ZoneState]  = {
-            n: ZoneState() for n in self.zones
-        }
-        self.history             : List[int] = []
-        self.freq                : Dict[int, int] = {i: 0 for i in range(37)}
-        self.neighbor_dist       : int = NEIGHBOR_DIST_MIN
-        # ── compteur pertes cylindre ────────────────
-        self.cylinder_loss_streak: int = 0
+    def __init__(self, window_size: int = 37):
+        self.window_size = window_size
+        self.window_history = deque(maxlen=self.window_size)  # 37 derniers tirages
+        self.history: List[int] = []                         # historique global (non limité)
+        self.zones = build_zones()
+        self.states: Dict[str, ZoneState] = {name: ZoneState() for name in self.zones.keys()}
+        self.total_tirages = 0
+        # voisins / cylindre
+        self.neighbor_dist = NEIGHBOR_DIST_MIN
+        self.wait_losses = 0
+        # streak hors voisins (utilisé pour légende)
+        self.cylinder_loss_streak = 0
 
     # ── ajout d'un numéro ─────────────────────────────────────
     def add_number(self, n: int):
+        # append to global history (non limité)
         self.history.append(n)
-        self.freq[n] += 1
-        total = len(self.history)
+        self.total_tirages += 1
 
-        # voisins cylindre — reset distance si voisin sort
+        # append to sliding window (maxlen=window_size)
+        self.window_history.append(n)
+        total_window = len(self.window_history)
+
+        # Mettre à jour streak hors voisins (détection sur voisins du précédent tirage)
         if len(self.history) >= 2:
             prev = self.history[-2]
-            neighbors = set(cylinder_neighbors(prev, self.neighbor_dist))
-            neighbors.add(prev)
-            if n in neighbors:
+            # voisins autour de prev selon la distance courante
+            neigh = set(cylinder_neighbors(prev, self.neighbor_dist))
+            neigh.add(prev)  # considérer aussi le numéro central comme "voisin actif"
+
+            if n in neigh:
+                # Un voisin (ou le même numéro) vient de sortir -> reset complet
                 self.cylinder_loss_streak = 0
-                # on ne reset la distance qu'après 3 coups hors voisins
-                # donc ici on maintient NEIGHBOR_DIST_MIN
                 self.neighbor_dist = NEIGHBOR_DIST_MIN
             else:
+                # Perte hors voisins : incrément du streak
                 self.cylinder_loss_streak += 1
-                if self.cylinder_loss_streak >= WAIT_increment:  # ←XX coups dehors
-                    self.neighbor_dist = min(
-                        self.neighbor_dist + 1, NEIGHBOR_DIST_MAX
-                    )
 
+                # Variante palier : augmenter la distance d'1 toutes les WAIT_increment pertes
+                if self.cylinder_loss_streak < WAIT_increment:
+                    self.neighbor_dist = NEIGHBOR_DIST_MIN
+                else:
+                    # nombre de paliers après le premier seuil
+                    paliers = (self.cylinder_loss_streak - WAIT_increment) // WAIT_increment + 1
+                    self.neighbor_dist = min(NEIGHBOR_DIST_MIN + paliers, NEIGHBOR_DIST_MAX)
 
-        # mise à jour zones
+        # Update each zone:
         for name, cfg in self.zones.items():
             st = self.states[name]
-            if n in cfg.numbers:
-                st.hits     += 1
-                st.last_seen = 0
-            else:
-                st.last_seen += 1
-            st.signal = compute_signal(cfg, st, total)
 
+            # Hits = occurrences inside the sliding window (fenêtre de window_size)
+            st.hits = sum(1 for x in self.window_history if x in cfg.numbers)
+
+            # last_seen : tirages depuis dernière apparition dans l'historique GLOBAL
+            try:
+                rev_index = next(i for i, val in enumerate(reversed(self.history)) if val in cfg.numbers)
+                # rev_index = 0 => le dernier tirage est dans la zone
+                st.last_seen = rev_index
+            except StopIteration:
+                st.last_seen = 9999
+
+            # compute signal (on passe la taille de la fenêtre)
+            st.signal = compute_signal(cfg, st, total_window)
+
+        # redraw / display
         os.system('cls' if os.name == 'nt' else 'clear')
-        self._display(n, total)
+        self._display(n, total_window)
 
     # ── prefill ───────────────────────────────────────────────
     def prefill(self, count: int):
@@ -272,13 +272,13 @@ class RouletteTracker:
             self.add_number(random.randint(0, 36))
 
     # ── numéros GO / ATTENTE (pour cylindre coloré) ───────────
-    def _signal_numbers(self) -> tuple[Set[int], Set[int]]:
-        go_nums   : Set[int] = set()
-        wait_nums : Set[int] = set()
+    def _signal_numbers(self) -> Tuple[Set[int], Set[int]]:
+        go_nums: Set[int] = set()
+        wait_nums: Set[int] = set()
         for name, cfg in self.zones.items():
             sig = self.states[name].signal
             if sig == "GO":
-                go_nums   |= cfg.numbers
+                go_nums |= cfg.numbers
             elif sig == "ATTENTE":
                 wait_nums |= cfg.numbers
         wait_nums -= go_nums
@@ -292,7 +292,7 @@ class RouletteTracker:
         # ── En-tête ───────────────────────────────────────────
         print("#" * 60)
         print(colorize(
-            f"  Dernier : {last:02d}   |   Total : {total}   "
+            f"  Dernier : {last:02d}   |   Total fenêtre : {total}   "
             f"|   Dist voisins : ±{self.neighbor_dist}",
             Color.BOLD, Color.GREEN if last != 0 else Color.CYAN
         ))
@@ -307,8 +307,8 @@ class RouletteTracker:
             Color.BOLD, Color.CYAN
         ))
         print(colorize(
-            f"  [XX]=sorti  <XX>=voisin(±{self.neighbor_dist})  "
-            , Color.DIM))
+            f"  [XX]=sorti  <XX>=voisin(±{self.neighbor_dist})  ",
+            Color.DIM))
 
         # ── Compteur pertes cylindre ──────────────────────────
         streak = self.cylinder_loss_streak
@@ -328,8 +328,6 @@ class RouletteTracker:
                 Color.RED
             )
         print(streak_str)
-        # ──────────────────────────────────────────────────────
-
         print()
         print(display_cylinder_full(last, self.neighbor_dist, go_nums, wait_nums))
         print()
@@ -339,14 +337,14 @@ class RouletteTracker:
         # ══════════════════════════════════════════════════════
         self._display_signal_block("GO")
 
-        # ══════════════════════════════════════════════════════
+        # ══════════════════════════════════════════════════════════════
         #  ZONES ATTENTE
-        # ══════════════════════════════════════════════════════
+        # ══════════════════════════════════════════════════════════════
         self._display_signal_block("ATTENTE")
 
-        # ══════════════════════════════════════════════════════
+        # ══════════════════════════════════════════════════════════════
         #  TABLEAU COMPLET — DEBUG
-        # ══════════════════════════════════════════════════════
+        # ══════════════════════════════════════════════════════════════
         if DEBUG:
             self._display_debug_table()
 
@@ -382,12 +380,12 @@ class RouletteTracker:
 
         print(colorize(
             f"  {'Zone':<22} {'Définition':<30} "
-            f"{'Hits':>5}  {'Absent':>6}",
+            f"{'Hits':>8}  {'Absent':>6}",
             Color.BOLD
         ))
 
         for name, cfg, st in entries:
-            hits_str   = colorize(f"{st.hits:>5}", Color.CYAN)
+            hits_str   = colorize(f"{st.hits:>5}/{self.window_size}", Color.CYAN)
             absent_str = colorize(f"{st.last_seen:>6}", color)
             print(
                 f"  {name:<22} {cfg.definition:<30} "
@@ -404,7 +402,7 @@ class RouletteTracker:
             Color.BOLD, Color.DIM
         ))
 
-        categories = ["Douzaine", "Colonne", "Sixain", "Carré"]
+        categories = ["Douzaine", "Colonne", "Sixain"]
 
         for cat in categories:
             print(colorize(
@@ -413,7 +411,7 @@ class RouletteTracker:
             ))
             print(colorize(
                 f"  {'Zone':<22} {'Définition':<36} "
-                f"{'Hits':>5}  {'Absent':>8}  Signal",
+                f"{'Hits':>8}  {'Absent':>8}  Signal",
                 Color.DIM
             ))
             print(colorize(f"  {sep}", Color.DIM))
@@ -423,15 +421,16 @@ class RouletteTracker:
                     continue
                 st = self.states[name]
 
-                hits_str = colorize(f"{st.hits:>5}", Color.CYAN)
+                hits_str = colorize(f"{st.hits:>5}/{self.window_size}", Color.CYAN)
 
+                # couleur suivant last_seen vs wait
                 if st.last_seen >= cfg.wait:
                     ac = Color.RED
                 elif st.last_seen >= cfg.wait // 2:
                     ac = Color.YELLOW
                 else:
                     ac = Color.DIM
-                absent_str = colorize(f"abs:{st.last_seen:>3}", ac)
+                absent_str = colorize(f"{st.last_seen:>3}", ac)
 
                 if st.signal == "GO":
                     sig_str = colorize("✅ GO     ", Color.GREEN, Color.BOLD)
@@ -453,26 +452,25 @@ class RouletteTracker:
 # ═══════════════════════════════════════════════════════════════
 
 def print_help():
-    print(colorize(f"""
-  ┌────────────────────────────────────────────────────────────┐
-  │  COMMANDES                                                 │
-  │  0-36  → entrer un numéro sorti                           │
-  │  d     → préfill 37 tirages aléatoires                    │
-  │  h     → afficher cette aide                              │
-  │  q     → quitter                                          │
-  ├────────────────────────────────────────────────────────────┤
-  │  SIGNAUX (marge d'approche : ±{MARGE})                         │
-  │  Douzaine/Colonne : GO si hits ≤ 10 ET absent ≥ 12       │
-  │  Sixain           : GO si hits ≤  3 ET absent ≥ 18       │
-  │  Carré            : GO si hits ≤  0 ET absent ≥ 25       │
-  │  ATTENTE : dans la marge de {MARGE} unités des seuils GO       │
-  ├────────────────────────────────────────────────────────────┤
-  │  CYLINDRE                                                  │
-  │  [XX]=sorti  <XX>=voisin  vert=GO  cyan=ATTENTE           │
-  │  Distance voisins : ±3 → ±6 (reset si voisin sort)       │
-  │  🟢=voisin actif  ⏳=1-3 pertes  🔴=4+ pertes            │
-  └────────────────────────────────────────────────────────────┘
-""", Color.DIM))
+    print(colorize("""
+      ┌────────────────────────────────────────────────────────────┐
+      │  COMMANDES                                                 │
+      │  0-36  → entrer un numéro sorti                           │
+      │  d     → préfill 37 tirages aléatoires                    │
+      │  h     → afficher cette aide                              │
+      │  q     → quitter                                          │
+      ├────────────────────────────────────────────────────────────┤
+      │  SIGNAUX (marge d'approche : ±4)                         │
+      │  Douzaine/Colonne : GO si hits ≤ 10 ET absent ≥ 12       │
+      │  Sixain           : GO si hits ≤  3 ET absent ≥ 18       │
+      │  ATTENTE : dans la marge de 4 unités des seuils GO       │
+      ├────────────────────────────────────────────────────────────┤
+      │  CYLINDRE                                                  │
+      │  [XX]=sorti  <XX>=voisin  vert=GO  cyan=ATTENTE           │
+      │  Distance voisins : ±3 → ±6 (reset si voisin sort)       │
+      │  🟢=voisin actif  ⏳=1-3 pertes  🔴=4+ pertes            │
+      └────────────────────────────────────────────────────────────┘
+    """, Color.DIM))
 
 # ═══════════════════════════════════════════════════════════════
 #  SECTION 8 : BOUCLE PRINCIPALE
@@ -508,17 +506,6 @@ def main():
                 break
             elif val == 'h':
                 print_help()
-            # elif val == 's':
-            #     stats = tracker.get_stats()
-            #     if stats:
-            #         print(colorize(
-            #             f"\n  Total : {stats['total_tirages']}"
-            #             f"  |  Chaud : {stats['numero_chaud']}"
-            #             f"  |  Froid : {stats['numero_froid']}\n",
-            #             Color.CYAN
-            #         ))
-            #     else:
-            #         print(colorize("  Aucun tirage.\n", Color.DIM))
             elif val == 'd':
                 tracker.prefill(37)
             else:
