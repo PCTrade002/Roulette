@@ -1,4 +1,16 @@
 """
++---+------------+----+----------------------+-------------------+---------------+---------------------------+
+| k |       F_k (€/num) | M_k | Mise tour (M_k×F_k) | Mise cumulée (€) | Gain brut (36·F_k) | Gain net (36·F_k − mise cumulée) |
++---+------------+----+----------------------+-------------------+---------------+---------------------------+
+| 1 |            1                 | 17 |         17           |        17         |      36       |            19             |
+| 2 |           1                | 15 |         15           |        32         |      36       |             4             |
+| 3 |           2             | 13 |         26           |        58         |      72       |            14             |
+| 4 |           3                | 13 |         39           |        97         |     108       |            11             |
+| 5 |           5               | 13 |         65           |       162         |     180       |            18             |
+| 6 |           8               | 13 |        104           |       266         |     288       |            22             |
+| 7 |           13      |  13 |        169           |       435         |     468       |            33             |
+| 8 |           21      | 13 |        273           |       708         |     756       |            48             |
+
 ╔══════════════════════════════════════════════════════════════╗
 ║              ULTRA ROULETTE PRO - VERSION 3 SIGNAUX          ║
 ║                                                              ║
@@ -55,9 +67,9 @@ RIGHT = CYLINDER[16:19]
 BOT   = CYLINDER[19:34]
 LEFT  = CYLINDER[34:37]
 
-WAIT_increment = 5
-NEIGHBOR_DIST_MIN = 3
-NEIGHBOR_DIST_MAX = 6
+WAIT_BEFORE_DECREMENT = 5
+START_NEIGHBOR_DIST = 7
+MIN_NEIGHBOR_DIST = 6
 
 def cylinder_neighbors(n: int, distance: int) -> List[int]:
     idx       = CYLINDER.index(n)
@@ -131,13 +143,14 @@ MARGE = 4
 #  - h_go : nombre maximal d'occurrences (hits) dans la fenêtre glissante
 #           (ici window_size, par défaut 37) pour que la zone puisse
 #           potentiellement devenir GO.
+#            Pourcentage de chance classique * 0.618 (ratio de la section dorée) :
 #  - a_go : nombre minimum de tirages d'absence (last_seen) depuis la
 #           dernière apparition dans l'historique GLOBAL pour déclencher GO.
 #
 SEUILS = {
-    "Douzaine": (8, 10),
-    "Colonne":  (8, 10),
-    "Sixain":   (2,  20),
+    "Douzaine": (7, 7), # 12*0.618 = 7.4 → arrondi à 7 pour être plus sélectif sur ce signal plus fort
+    "Colonne":  (7, 7), # 12*0.618 = 7.4 → arrondi à 7 pour être plus sélectif sur ce signal plus fort
+    "Sixain":   (3,  18), # 6*0.618 = 3.7 → arrondi à 3 pour être plus sélectif sur ce signal plus fort
 }
 
 def compute_signal(cfg: ZoneConfig, state: ZoneState, total_window: int) -> str:
@@ -206,7 +219,7 @@ class RouletteTracker:
         self.states: Dict[str, ZoneState] = {name: ZoneState() for name in self.zones.keys()}
         self.total_tirages = 0
         # voisins / cylindre
-        self.neighbor_dist = NEIGHBOR_DIST_MIN
+        self.neighbor_dist = START_NEIGHBOR_DIST
         self.wait_losses = 0
         # streak hors voisins (utilisé pour légende)
         self.cylinder_loss_streak = 0
@@ -224,25 +237,28 @@ class RouletteTracker:
         # Mettre à jour streak hors voisins (détection sur voisins du précédent tirage)
         if len(self.history) >= 2:
             prev = self.history[-2]
-            # voisins autour de prev selon la distance courante
+
+            # construire les voisins en utilisant la distance courante
             neigh = set(cylinder_neighbors(prev, self.neighbor_dist))
             neigh.add(prev)  # considérer aussi le numéro central comme "voisin actif"
 
             if n in neigh:
                 # Un voisin (ou le même numéro) vient de sortir -> reset complet
                 self.cylinder_loss_streak = 0
-                self.neighbor_dist = NEIGHBOR_DIST_MIN
+                self.neighbor_dist = START_NEIGHBOR_DIST
             else:
                 # Perte hors voisins : incrément du streak
                 self.cylinder_loss_streak += 1
 
-                # Variante palier : augmenter la distance d'1 toutes les WAIT_increment pertes
-                if self.cylinder_loss_streak < WAIT_increment:
-                    self.neighbor_dist = NEIGHBOR_DIST_MIN
+                # Règle demandée : on attend WAIT_BEFORE_DECREMENT pertes avant de commencer à décrémenter.
+                if self.cylinder_loss_streak < WAIT_BEFORE_DECREMENT:
+                    # Tant que le palier n'est pas atteint, on conserve la valeur de départ.
+                    self.neighbor_dist = START_NEIGHBOR_DIST
                 else:
-                    # nombre de paliers après le premier seuil
-                    paliers = (self.cylinder_loss_streak - WAIT_increment) // WAIT_increment + 1
-                    self.neighbor_dist = min(NEIGHBOR_DIST_MIN + paliers, NEIGHBOR_DIST_MAX)
+                    # Nombre de décréments effectués depuis le palier (1 au premier palier).
+                    decrements_since_threshold = self.cylinder_loss_streak - WAIT_BEFORE_DECREMENT + 1
+                    # nouvelle distance = START - décréments, mais pas en dessous de MIN_NEIGHBOR_DIST
+                    self.neighbor_dist = max(START_NEIGHBOR_DIST - decrements_since_threshold, MIN_NEIGHBOR_DIST)
 
         # Update each zone:
         for name, cfg in self.zones.items():
@@ -317,7 +333,7 @@ class RouletteTracker:
                 f"  🟢 Voisins actifs — pertes consécutives : {streak}",
                 Color.GREEN
             )
-        elif streak <= 3:
+        elif streak <= WAIT_BEFORE_DECREMENT-2:
             streak_str = colorize(
                 f"  ⏳ Pertes hors voisins : {streak}",
                 Color.YELLOW
