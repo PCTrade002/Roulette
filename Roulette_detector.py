@@ -136,18 +136,18 @@ def build_zones() -> Dict[str, ZoneConfig]:
             definition = definition,
         )
 
-    add("Douzaine 1", range(1,  13), "Douzaine", 12, "1→12")
-    add("Douzaine 2", range(13, 25), "Douzaine", 12, "13→24")
-    add("Douzaine 3", range(25, 37), "Douzaine", 12, "25→36")
+    add("Douzaine 1", range(1,  13), "Douzaine", 10, "1→12")
+    add("Douzaine 2", range(13, 25), "Douzaine", 10, "13→24")
+    add("Douzaine 3", range(25, 37), "Douzaine", 10, "25→36")
 
     add("Colonne 1",
-        {1,4,7,10,13,16,19,22,25,28,31,34}, "Colonne", 12,
+        {1,4,7,10,13,16,19,22,25,28,31,34}, "Colonne", 10,
         "1 4 7 10 13 16 19 22 25 28 31 34")
     add("Colonne 2",
-        {2,5,8,11,14,17,20,23,26,29,32,35}, "Colonne", 12,
+        {2,5,8,11,14,17,20,23,26,29,32,35}, "Colonne", 10,
         "2 5 8 11 14 17 20 23 26 29 32 35")
     add("Colonne 3",
-        {3,6,9,12,15,18,21,24,27,30,33,36}, "Colonne", 12,
+        {3,6,9,12,15,18,21,24,27,30,33,36}, "Colonne", 10,
         "3 6 9 12 15 18 21 24 27 30 33 36")
 
     add("Sixain 1",  range(1,  7),  "Sixain", 18, "1→6")
@@ -157,33 +157,33 @@ def build_zones() -> Dict[str, ZoneConfig]:
     add("Sixain 5",  range(25, 31), "Sixain", 18, "25→30")
     add("Sixain 6",  range(31, 37), "Sixain", 18, "31→36")
 
-    squares = [
-        ({1,2,4,5},    "1 2 4 5"),
-        ({2,3,5,6},    "2 3 5 6"),
-        ({4,5,7,8},    "4 5 7 8"),
-        ({5,6,8,9},    "5 6 8 9"),
-        ({7,8,10,11},  "7 8 10 11"),
-        ({8,9,11,12},  "8 9 11 12"),
-        ({10,11,13,14},"10 11 13 14"),
-        ({11,12,14,15},"11 12 14 15"),
-        ({13,14,16,17},"13 14 16 17"),
-        ({14,15,17,18},"14 15 17 18"),
-        ({16,17,19,20},"16 17 19 20"),
-        ({17,18,20,21},"17 18 20 21"),
-        ({19,20,22,23},"19 20 22 23"),
-        ({20,21,23,24},"20 21 23 24"),
-        ({22,23,25,26},"22 23 25 26"),
-        ({23,24,26,27},"23 24 26 27"),
-        ({25,26,28,29},"25 26 28 29"),
-        ({26,27,29,30},"26 27 29 30"),
-        ({28,29,31,32},"28 29 31 32"),
-        ({29,30,32,33},"29 30 32 33"),
-        ({31,32,34,35},"31 32 34 35"),
-        ({32,33,35,36},"32 33 35 36"),
-    ]
-    for nums, defi in squares:
-        name = "Carré " + defi
-        add(name, nums, "Carré", 25, defi)
+    # squares = [
+    #     ({1,2,4,5},    "1 2 4 5"),
+    #     ({2,3,5,6},    "2 3 5 6"),
+    #     ({4,5,7,8},    "4 5 7 8"),
+    #     ({5,6,8,9},    "5 6 8 9"),
+    #     ({7,8,10,11},  "7 8 10 11"),
+    #     ({8,9,11,12},  "8 9 11 12"),
+    #     ({10,11,13,14},"10 11 13 14"),
+    #     ({11,12,14,15},"11 12 14 15"),
+    #     ({13,14,16,17},"13 14 16 17"),
+    #     ({14,15,17,18},"14 15 17 18"),
+    #     ({16,17,19,20},"16 17 19 20"),
+    #     ({17,18,20,21},"17 18 20 21"),
+    #     ({19,20,22,23},"19 20 22 23"),
+    #     ({20,21,23,24},"20 21 23 24"),
+    #     ({22,23,25,26},"22 23 25 26"),
+    #     ({23,24,26,27},"23 24 26 27"),
+    #     ({25,26,28,29},"25 26 28 29"),
+    #     ({26,27,29,30},"26 27 29 30"),
+    #     ({28,29,31,32},"28 29 31 32"),
+    #     ({29,30,32,33},"29 30 32 33"),
+    #     ({31,32,34,35},"31 32 34 35"),
+    #     ({32,33,35,36},"32 33 35 36"),
+    # ]
+    # for nums, defi in squares:
+    #     name = "Carré " + defi
+    #     add(name, nums, "Carré", 25, defi)
 
     return zones
 
@@ -226,7 +226,7 @@ class RouletteTracker:
         self.history             : List[int] = []
         self.freq                : Dict[int, int] = {i: 0 for i in range(37)}
         self.neighbor_dist       : int = NEIGHBOR_DIST_MIN
-        # ── NOUVEAU : compteur pertes cylindre ────────────────
+        # ── compteur pertes cylindre ────────────────
         self.cylinder_loss_streak: int = 0
 
     # ── ajout d'un numéro ─────────────────────────────────────
@@ -271,18 +271,6 @@ class RouletteTracker:
         for _ in range(count):
             self.add_number(random.randint(0, 36))
 
-    # ── stats ─────────────────────────────────────────────────
-    def get_stats(self) -> Optional[Dict]:
-        if not self.history:
-            return None
-        chaud = max(self.freq, key=self.freq.get)
-        froid = min(self.freq, key=self.freq.get)
-        return {
-            "total_tirages": len(self.history),
-            "numero_chaud" : chaud,
-            "numero_froid" : froid,
-        }
-
     # ── numéros GO / ATTENTE (pour cylindre coloré) ───────────
     def _signal_numbers(self) -> tuple[Set[int], Set[int]]:
         go_nums   : Set[int] = set()
@@ -302,10 +290,7 @@ class RouletteTracker:
         go_nums, wait_nums = self._signal_numbers()
 
         # ── En-tête ───────────────────────────────────────────
-        print(colorize(
-            "\n  ULTRA ROULETTE PRO — 3 Signaux\n",
-            Color.BOLD, Color.CYAN
-        ))
+        print("#" * 60)
         print(colorize(
             f"  Dernier : {last:02d}   |   Total : {total}   "
             f"|   Dist voisins : ±{self.neighbor_dist}",
@@ -323,9 +308,7 @@ class RouletteTracker:
         ))
         print(colorize(
             f"  [XX]=sorti  <XX>=voisin(±{self.neighbor_dist})  "
-            f"{'XX':>3}=GO✅  {'XX':>3}=ATTENTE⏳",
-            Color.DIM
-        ))
+            , Color.DIM))
 
         # ── Compteur pertes cylindre ──────────────────────────
         streak = self.cylinder_loss_streak
@@ -474,7 +457,6 @@ def print_help():
   ┌────────────────────────────────────────────────────────────┐
   │  COMMANDES                                                 │
   │  0-36  → entrer un numéro sorti                           │
-  │  s     → statistiques globales                            │
   │  d     → préfill 37 tirages aléatoires                    │
   │  h     → afficher cette aide                              │
   │  q     → quitter                                          │
@@ -514,7 +496,7 @@ def main():
         try:
             val = input(
                 colorize(
-                    "\n  Numéro (0-36) / s / d / h / q : ",
+                    "\n  Numéro (0-36) / d / h / q : ",
                     Color.BOLD
                 )
             ).strip().lower()
@@ -526,17 +508,17 @@ def main():
                 break
             elif val == 'h':
                 print_help()
-            elif val == 's':
-                stats = tracker.get_stats()
-                if stats:
-                    print(colorize(
-                        f"\n  Total : {stats['total_tirages']}"
-                        f"  |  Chaud : {stats['numero_chaud']}"
-                        f"  |  Froid : {stats['numero_froid']}\n",
-                        Color.CYAN
-                    ))
-                else:
-                    print(colorize("  Aucun tirage.\n", Color.DIM))
+            # elif val == 's':
+            #     stats = tracker.get_stats()
+            #     if stats:
+            #         print(colorize(
+            #             f"\n  Total : {stats['total_tirages']}"
+            #             f"  |  Chaud : {stats['numero_chaud']}"
+            #             f"  |  Froid : {stats['numero_froid']}\n",
+            #             Color.CYAN
+            #         ))
+            #     else:
+            #         print(colorize("  Aucun tirage.\n", Color.DIM))
             elif val == 'd':
                 tracker.prefill(37)
             else:
